@@ -1,12 +1,14 @@
 '''
-Peer. 
+Peer in distributed Bellman Ford algorithm implementation. Each peer has an
+instance of the Distance_Vector class.
 
 Run using 'python Peer.py <local_port> <timeout_seconds> 
     <<remote_ip_1> <remote_port_1> <remote_weight_1>>
     <<remote_ip_2> <remote_port_2> <remote_weight_2>>' ...etc. 
     for any number of remote clients. 
     
-E.g. 'python Peer.py 55555 3 127.0.0.1 55556 15 127.0.0.1 55557 20 127.0.0.1 55558 25'
+E.g. 'python Peer.py 55555 3 127.0.0.1 55556 15 127.0.0.1 55557 
+    20 127.0.0.1 55558 25'
 
 @author: Emily Pakulski
 '''
@@ -19,12 +21,27 @@ from Distance_Vector import Distance_Vector
     
 class Peer:
     local_IP = '127.0.0.1'
+    BUFF_SIZE = 4096
     
     # commands for UI
     link_down = 'LINKDOWN'
     link_up = 'LINKUP'
     show_routes = 'SHOWRT'
     close = 'CLOSE'
+
+    # pings the remote Google name server to get an external IP
+    def get_external_ip(self):
+        s = socket(AF_INET, SOCK_DGRAM)
+        s.connect(('8.8.8.8', 80))
+        sockname = s.getsockname()[0]
+        s.close()
+        return str(sockname)
+    
+    # cycle through the current list of destinations
+    def send_DVs(self):
+        while 1:
+            possible_destinations = self.distance_vector.get_destinations()
+
 
     # loop serving as command-line interface for client machine
     def open_interface(self):
@@ -41,63 +58,53 @@ class Peer:
             if message[0] == self.close:
                 print self.close
 
-    # waits to hear for a new peer
-    def update_peer(self, peer_socket, peer_ip, peer_port):        
+    # waits to hear for a new peer. If we hear from a new peer, try to update
+    # the distance vector.
+    def update_peer(self, data, peer_ip, peer_port):        
         while 1:
-            # parse peer message
-            weight = peer_socket.recv() 
-            print 'Weight received from ' + str(peer_ip) + ': ' + weight
+            Distance_Vector.parse_distance_vector(data, peer_ip, peer_port)
             
-            #self.routing_table[peer_ip] = (int(weight), peer_socket)
-
-    def write_dv_to_routing_table(self, distance_vector, is_active, timestamp):
-        key = distance_vector.sender_ip + ':' + distance_vector.sender_port + '-' \
-            + distance_vector.dest_ip + ':' + distance_vector.dest_ip
-            
-        self.routing_table[key] = (distance_vector, is_active, timestamp)
+            print 'Received DV from ' + str(peer_ip) + ':' + str(peer_port) + '.'
 
     # send remote peer edge weight, and upon confirmation that the weight was
     # received, store that data in this node's routing table
-    def connect_to_new_peer(self, remote_ip, remote_port, remote_weight):
+    def add_new_peer(self, remote_ip, remote_port, remote_weight):
         print remote_ip + ' ' + str(remote_port) + ' ' + str(remote_weight)
         
-        remote_sock = socket(AF_INET, SOCK_STREAM)
-        remote_sock.connect((remote_ip, remote_port))
-        
-        distance_vector = Distance_Vector(remote_weight, self.local_IP, \
-                                          self.local_port, remote_ip, remote_port)
-        remote_sock.sendall(distance_vector.stringify())
-        
-        self.write_dv_to_routing_table(distance_vector)
-        
+        self.distance_vector.add_cost(remote_ip, remote_port, remote_weight)
+         
         print 'New peer connected on '  + str(remote_ip) + ':' + str(remote_port) + '. '
         stdout.flush()
 
     def __init__(self, argv):
         self.local_port = int(argv[1])
         self.timeout_seconds = int(argv[2])
+        self.distance_vector = Distance_Vector(self.local_IP, self.local_port)
+        print 'my ip is ' + self.get_external_ip()
         
-        # maps each IP to tuple of (weight, socket)
-        self.routing_table = {}
-        
-        # connect to peers passed in as arguments: initialization step of algorithm
+        # register neighbors passed in as arguments: initialization step of algorithm
         for n in range(3, len(argv) - 2, 3):
-            self.connect_to_new_peer(argv[n], int(argv[n + 1]), int(argv[n + 2]))      
+            self.add_new_peer(argv[n], int(argv[n + 1]), int(argv[n + 2]))
        
         # set up read-only UDP socket to listen for incoming messages
         sock = socket(AF_INET, SOCK_DGRAM)
         sock.bind((self.local_IP, self.local_port))
-    
+
         # open command line interface
         interface_thread = Thread(target=self.open_interface, args=())
         interface_thread.start()
         
-        # continuously cycle through peers and send updated distance vectors
+        # continuously cycle through peers and send updated distance vector
+        sending_thread = Thread(target=self.send_DVs, args=())
+        sending_thread.start()
+        
+        # update distance vector with any data received from peers
         while 1:
-            client_connection, addr = sock.accept()
+            data, addr = sock.recvfrom(self.BUFF_SIZE) 
             
             client_thread = Thread(target=self.update_peer, 
-                            args=(client_connection, addr[0], addr[1]))
+                            args=(data, addr[0], addr[1]))
+            
             client_thread.start()
         
 def main(argv):
