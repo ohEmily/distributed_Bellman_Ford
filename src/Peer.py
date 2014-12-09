@@ -22,11 +22,28 @@ import time
 
 from Distance_Vector import Distance_Vector
 from Neighbor import Neighbor
-    
+
+# continuously call function after every timeout
+class SendTimer(Thread):
+    def __init__(self, func, timeout, *args):
+        Thread.__init__(self)
+        self.func = func
+        self.timeout = timeout
+        self.args = args
+        
+        self.daemon = True 
+        # from docs: 'entire Python program exits when only daemon threads are left'
+
+    def run(self):
+        while True:
+            time.sleep(self.timeout)
+            self.func(*self.args)
+   
 class Peer:
     BUFF_SIZE = 4096
     
     # commands for UI and keywords for the peer communication protocol
+    # (careful -- the commands for the UI and keywords are the same.)
     link_down =     'LINKDOWN' 
     link_up =       'LINKUP'
     show_routes =   'SHOWRT'
@@ -109,44 +126,6 @@ class Peer:
             print '\nPeer process shut down. '
 
     ##################### NETWORK INTERFACE METHODS ######################
-    
-    # returns true if we should send a distance vector to this client; false if not
-    def should_send(self, neighbor_obj):
-        if (neighbor_obj.is_active and neighbor_obj.send_count < 3):
-            # DV has never been sent to this peer before
-            if (neighbor_obj.last_active_time == 0):
-                return True
-            
-            #if (timedelta(datetime.now() - neighbor_obj.last_active_time).total_seconds() >= self.timeout_seconds):
-            #    return True
-        
-        return False
-
-    # cycle through the current list of neighbors and continuously try to
-    # send distance vectors.
-    def send_DVs(self):
-        while 1:
-            try:
-                for neighbor_name in self.neighbors:
-                    neighbor_obj = self.neighbors[neighbor_name]
-                    
-                    if neighbor_obj.is_active == True:
-                        dest_ip, dest_port = Peer.parse_key(neighbor_name)
-                        
-                        if (self.should_send(neighbor_obj)):
-                            self.distance_vector.send_distance_vector(dest_ip, dest_port, self.dv_update) # TODO
-                            #print 'sent distance vector'
-                            #stdout.flush()
-                        
-                        # increment number of sends
-                        #neighbor_obj.send_count += 1
-                        #neighbor_obj.last_active_time = datetime.now()
-            except Exception as e:
-                print e
-            
-            # TEMPORARY!
-            time.sleep(2)
-                
     # waits to hear for a new peer. If we hear from a new peer, try to send_update
     # the distance vector.
     def handle_incoming_data(self, data, peer_ip, peer_port):
@@ -160,15 +139,44 @@ class Peer:
             
             print new_dv.pretty_print()
             stdout.flush()
+            
+            # reset number of consecutive sends without hearing from this peer
+            this_neighbor = self.neighbors[peer_ip + ':' + str(peer_port)]
+            this_neighbor.send_count = 0
+            this_neighbor.last_active_time = 0 # TODO not 0
+    
+    # returns true if we should send a distance vector to this client; false if not
+    def should_send(self, neighbor_obj):
+        if (neighbor_obj.is_active and neighbor_obj.send_count < 3):
+            # DV has never been sent to this peer before
+            if (neighbor_obj.last_active_time == 0):
+                return True
+        
+        return False
+
+    # send single DV
+    def send_DV(self, dest_ip, dest_port, command):
+        print 'sent DV'
+        stdout.flush()
+        key = Peer.create_key(dest_ip, dest_port)
+        
+        if (self.should_send(self.neighbors[key])):
+            self.distance_vector.send_distance_vector(dest_ip, dest_port, command)
+        
+            self.neighbors[key].send_count += 1
+            self.neighbors[key].last_active_time = datetime.now()
+        
+        if self.neighbors[key].send_count >= 3:
+            self.neighbors[key].is_active = False
 
     # Add to neighbor dictionary and add to Distance Vector
     def add_neighbor(self, remote_ip, remote_port, remote_weight):
-#         print remote_ip + ' ' + str(remote_port) + ' ' + str(remote_weight)
-#         stdout.flush()
         key = Peer.create_key(remote_ip, remote_port)
-        self.neighbors[key] = Neighbor(True, 0, 0)
+        neighbor_timer = SendTimer(self.send_DV, self.timeout_seconds, \
+                                   remote_ip, remote_port, self.dv_update)
+        self.neighbors[key] = Neighbor(True, 0, 0, neighbor_timer)
         
-        self.distance_vector.add_or_update_cost(key, remote_weight)
+        self.distance_vector.add_or_update_cost(key, remote_weight, True)
 
     def __init__(self, argv):
         self.local_IP = Peer.get_external_ip()
@@ -185,9 +193,10 @@ class Peer:
         interface_thread = Thread(target=self.open_interface, args=())
         interface_thread.start()
         
-        # send updated distance vectors to neighbors
-        sending_thread = Thread(target=self.send_DVs, args=())
-        sending_thread.start()
+        
+        # start sending updated distance vectors to neighbors
+        for key in self.neighbors:
+            self.neighbors[key].timer.start()
                
         # set up read-only UDP socket to listen for incoming messages
         sock = socket(AF_INET, SOCK_DGRAM)
