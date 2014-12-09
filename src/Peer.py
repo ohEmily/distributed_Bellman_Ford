@@ -23,11 +23,12 @@ class Peer:
     local_IP = '127.0.0.1'
     BUFF_SIZE = 4096
     
-    # commands for UI
+    # commands for UI and keywords for the peer communication protocol
     link_down = 'LINKDOWN'
     link_up = 'LINKUP'
     show_routes = 'SHOWRT'
     close = 'CLOSE'
+    dv_update = 'UPDATE'
 
     # pings the remote Google name server to get an external IP
     def get_external_ip(self):
@@ -41,7 +42,7 @@ class Peer:
     # send distance vectors.
     def send_DVs(self):
         while 1:
-            self.distance_vector.update(self.timeout_seconds)
+            self.distance_vector.send_update(self.timeout_seconds, self.dv_update)
 
     # loop serving as command-line interface for client machine
     def open_interface(self):
@@ -58,17 +59,19 @@ class Peer:
             if message[0] == self.close:
                 print self.close
 
-    # waits to hear for a new peer. If we hear from a new peer, try to update
+    # waits to hear for a new peer. If we hear from a new peer, try to send_update
     # the distance vector.
-    def update_peer(self, data, peer_ip, peer_port):        
-        while 1:
+    def handle_message_to_peer(self, data, peer_ip, peer_port):
+        keyword = data.split()[0]
+        
+        if (keyword is self.dv_update):
             Distance_Vector.parse_distance_vector(data, peer_ip, peer_port)
-            
-            print 'Received DV from ' + str(peer_ip) + ':' + str(peer_port) + '.'
+        
+        print 'Received DV from ' + str(peer_ip) + ':' + str(peer_port) + '.'
 
     # send remote peer edge weight, and upon confirmation that the weight was
     # received, store that data in this node's routing table
-    def add_new_peer(self, remote_ip, remote_port, remote_weight):
+    def add_neighbor(self, remote_ip, remote_port, remote_weight):
         print remote_ip + ' ' + str(remote_port) + ' ' + str(remote_weight)
         
         self.distance_vector.add_cost(remote_ip, remote_port, remote_weight)
@@ -84,7 +87,7 @@ class Peer:
         
         # register neighbors passed in as arguments: initialization step of algorithm
         for n in range(3, len(argv) - 2, 3):
-            self.add_new_peer(argv[n], int(argv[n + 1]), int(argv[n + 2]))
+            self.add_neighbor(argv[n], int(argv[n + 1]), int(argv[n + 2]))
        
         # set up read-only UDP socket to listen for incoming messages
         sock = socket(AF_INET, SOCK_DGRAM)
@@ -98,13 +101,12 @@ class Peer:
         sending_thread = Thread(target=self.send_DVs, args=())
         sending_thread.start()
         
-        # update distance vector with any data received from peers
+        # send_update distance vector with any data received from peers
         while 1:
             data, addr = sock.recvfrom(self.BUFF_SIZE) 
              
-            client_thread = Thread(target=self.update_peer, 
+            client_thread = Thread(target=self.handle_message_to_peer, 
                             args=(data, addr[0], addr[1]))
-             
             client_thread.start()
         
 def main(argv):
