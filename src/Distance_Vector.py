@@ -8,9 +8,10 @@ boolean specifying whether it is active.
 @author: Emily Pakulski
 '''
 
-import sys
+from socket import socket, AF_INET, SOCK_DGRAM
 from sys import stdout
-from datetime import datetime
+from datetime import datetime, timedelta
+from Entry import Entry
 
 class Distance_Vector:
     
@@ -28,24 +29,55 @@ class Distance_Vector:
     
     def parse_key(self, key):
         key_string = key.split(':') 
-        return (key_string[0], key_string[1])
+        return (key_string[0], int(key_string[1]))
     
     def add_cost(self, destination_ip, destination_port, weight):
         key = self.create_key(destination_ip, destination_port)
-        self.destinations[key] = (weight, True, 0)
-    
+        
+        # map key to: weight, whether this peer is active, time of last activity, 
+        # and number of consecutive sends
+        self.destinations[key] = Entry(weight, True, 0, 0)
+        
     def linkdown(self, destination_ip, destination_port):
         key = self.create_key(destination_ip, destination_port)
         value = self.destinations[key]
-        value[1] = False
+        value.is_active = False
         self.destinations[key] = value
     
-    def get_destinations(self):
-        return self.destinations.keys()
-    
-    def get_value(self, key):
-        return self.destinations[key]
-    
+    def send_distance_vector(self, dest_ip, dest_port):
+        sock = socket(AF_INET, SOCK_DGRAM)
+        sock.sendto(self.stringify(), (dest_ip, dest_port))
+
+    # returns true if we should send a distance vector to this client; false if not
+    def should_send(self, key, timeout):
+        this_entry = self.destinations[key] 
+        
+        if (this_entry.send_count < 3):
+            # if has never been sent to this peer before
+            if (this_entry.last_active_time is 0):
+                return True
+            
+            if (datetime.now() - this_entry.last_active_time \
+                >= timedelta(seconds = timeout)):
+                return True
+        
+        return False
+
+    # cycle through all current values and update times
+    def update(self, timeout):
+        for key in self.destinations:            
+            # if link being up is set to TRUE
+            if (self.destinations[key].is_active is True):
+                dest_ip, dest_port = self.parse_key(key)
+                
+                if (self.should_send(key, timeout)): # we've never sent anything to this peer
+                    self.send_distance_vector(dest_ip, dest_port)
+                    
+                    # increment number of sends
+                    self.destinations[key].send_count += 1
+                    self.destinations[key].last_active_time = datetime.now()
+                    
+                    
     # sends estimated distance of this node to all known destinations in
     # format that matches the parsing method below.
     #
@@ -54,8 +86,10 @@ class Distance_Vector:
         output = ''
         
         for key in self.destinations:
-            output += key + ' ' + self.destinations[key][0] + '\n'
+            output += key + ' ' + str(self.destinations[key].weight) + '\n'
             
+        print 'test of vector string: ' + output + '\n'
+        stdout.flush()
         return output
     
     # 

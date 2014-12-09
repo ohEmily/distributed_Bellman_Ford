@@ -37,11 +37,11 @@ class Peer:
         s.close()
         return str(sockname)
     
-    # cycle through the current list of destinations
+    # cycle through the current list of destinations and continuously try to
+    # send distance vectors.
     def send_DVs(self):
         while 1:
-            possible_destinations = self.distance_vector.get_destinations()
-
+            self.distance_vector.update(self.timeout_seconds)
 
     # loop serving as command-line interface for client machine
     def open_interface(self):
@@ -101,10 +101,10 @@ class Peer:
         # update distance vector with any data received from peers
         while 1:
             data, addr = sock.recvfrom(self.BUFF_SIZE) 
-            
+             
             client_thread = Thread(target=self.update_peer, 
                             args=(data, addr[0], addr[1]))
-            
+             
             client_thread.start()
         
 def main(argv):
