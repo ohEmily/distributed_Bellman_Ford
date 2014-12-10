@@ -69,6 +69,7 @@ class Peer:
         key_string = key.split(':') 
         return (key_string[0], int(key_string[1]))
 
+
     ############################ UI METHODS ###########################
     # loop serving as command-line interface for client machine
     def open_interface(self):
@@ -149,11 +150,10 @@ class Peer:
         
     # close this process
     def cmd_close(self):
-        try:
-            exit(1) 
-        except (KeyboardInterrupt, SystemExit):
-            stdout.flush()
-            print '\nPeer process shut down. '
+        print '\nPeer process shut down. '
+        stdout.flush()
+        exit(1) 
+
 
     ##################### NETWORK INTERFACE METHODS ######################
     # waits to hear from a peer. If we hear from a new peer, try to send_update
@@ -207,8 +207,7 @@ class Peer:
         
         if self.neighbors[key].send_count >= 3:
             self.neighbors[key].is_active = False
-            # just added
-            self.cmd_linkdown(dest_ip, dest_port)
+            self.linkdown_no_send(dest_ip, dest_port)
 
     # Add to neighbor dictionary and add to Distance Vector
     def add_neighbor(self, remote_ip, remote_port, remote_weight):

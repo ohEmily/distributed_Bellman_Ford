@@ -23,22 +23,13 @@ class Distance_Vector:
         self.is_neighbor = {}
         
         self.previous_weights = {}
-        
-#         # list of destinations not currently accessible
-#         self.removed_destinations = {}
     
     def deactivate_link(self, key):
         self.previous_weights[key] = self.destinations[key]
         self.destinations[key] = maxint
-        
-#         if (self.destinations.has_key(key)):
-#             self.removed_destinations[key] = self.destinations[key]
-#             self.destinations.pop(key)
-    
+
     def reactivate_link(self, key):
         self.destinations[key] = self.previous_weights[key]
-#         if (self.removed_destinations.has_key(key)):
-#             self.destinations[key] = self.removed_destinations[key]
         
     def set_weight(self, key, weight):
         self.destinations[key] = weight
@@ -69,6 +60,7 @@ class Distance_Vector:
                 else:
                     if thru_weight < self.destinations[other_peer]:
                         self.add_or_update_cost(other_peer, thru_weight)
+
 
     ################### DATA TRANSFER METHODS ################################       
     # sends estimated distance of this node to all known destinations in JSON.

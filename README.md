@@ -10,9 +10,9 @@ Extra Features
 --------------
  - added command: force sending DV to peer (type 'update <ip_addr> <port>')
 
-Inter-Peer Communication Protocol
----------------------------------
-Peers communicate using JSON. 
+Description of Inter-Peer Communication Protocol
+------------------------------------------------
+Peers communicate using an object serialized to JSON. The object always has a 'command' attribute which tells the receiving peer what sort of payload it is receiving. From there, depending on what kind of message it received (SHOWRT, LINKUP, or LINKDOWN), it reads different parts of the JSON object pertinent to that command.
  
 How to run (example)
 ----------
