@@ -9,11 +9,11 @@ boolean specifying whether it is active.
 '''
 
 from socket import socket, AF_INET, SOCK_DGRAM
-from sys import stdout
+from sys import stdout, maxint
 from time import strftime
 import json
 
-class Distance_Vector:
+class Distance_Vector:   
     
     def __init__(self, sender_ip, sender_port):
         self.sender_ip = sender_ip
@@ -21,6 +21,27 @@ class Distance_Vector:
         self.address = self.sender_ip + ':' + str(self.sender_port)
         self.destinations = {}
         self.is_neighbor = {}
+        
+        self.previous_weights = {}
+        
+#         # list of destinations not currently accessible
+#         self.removed_destinations = {}
+    
+    def deactivate_link(self, key):
+        self.previous_weights[key] = self.destinations[key]
+        self.destinations[key] = maxint
+        
+#         if (self.destinations.has_key(key)):
+#             self.removed_destinations[key] = self.destinations[key]
+#             self.destinations.pop(key)
+    
+    def reactivate_link(self, key):
+        self.destinations[key] = self.previous_weights[key]
+#         if (self.removed_destinations.has_key(key)):
+#             self.destinations[key] = self.removed_destinations[key]
+        
+    def set_weight(self, key, weight):
+        self.destinations[key] = weight
     
     def get_weight(self, key):
         return self.destinations[key]

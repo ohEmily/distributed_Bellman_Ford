@@ -85,7 +85,6 @@ class Peer:
                             print 'Missing arguments. '
                     elif message[0].upper() == self.link_up:
                         if (len(message) >= 3):
-                            print 'Entered command: ' + self.link_up
                             self.cmd_linkup(message[1], message[2])
                         else:
                             print 'Missing arguments. '
@@ -102,17 +101,46 @@ class Peer:
             
             stdout.flush()
 
+    def send_link_cmd(self, command, dest_ip, dest_port):        
+        serialized_msg = json.dumps({'command' : command, \
+                           'source_ip' : self.local_IP, \
+                           'source_port' : self.local_port})
+
+        sock = socket(AF_INET, SOCK_DGRAM)
+        sock.sendto(serialized_msg, (dest_ip, int(dest_port)))
+
     # allows user to destroy an existing link to its neighbor
     def cmd_linkdown(self, dest_ip, dest_port):
+        self.linkdown_no_send(dest_ip, dest_port)
+        self.send_link_cmd(self.link_down, dest_ip, dest_port)
+    
+    def linkdown_no_send(self, dest_ip, dest_port):
         key = Peer.create_key(dest_ip, dest_port)
-        neighbor_obj = self.neighbors[key]
-        neighbor_obj.is_active = False
+        
+        if self.neighbors.has_key(key):
+            neighbor_obj = self.neighbors[key]
+            self.distance_vector.deactivate_link(key)
+            neighbor_obj.is_active = False
+            
+        else:
+            print 'This node is not a neighbor. '
+            stdout.flush()
     
     # reactivates link between existing link and its neighbor
     def cmd_linkup(self, dest_ip, dest_port):
+        self.linkup_no_send(dest_ip, dest_port)
+        self.send_link_cmd(self.link_up, dest_ip, dest_port)
+
+    def linkup_no_send(self, dest_ip, dest_port):
         key = Peer.create_key(dest_ip, dest_port)
-        neighbor_obj = self.neighbors[key]
-        neighbor_obj.is_active = True
+        
+        if self.neighbors.has_key(key):
+            neighbor_obj = self.neighbors[key]
+            self.distance_vector.reactivate_link(key)
+            neighbor_obj.is_active = True
+        else:
+            print 'This node is not a neighbor. '
+            stdout.flush()
 
     # output a human-readable routing table
     def cmd_showrt(self):
@@ -131,11 +159,20 @@ class Peer:
     # waits to hear from a peer. If we hear from a new peer, try to send_update
     # the distance vector.
     def handle_incoming_data(self, data, peer_ip, peer_port): 
-        keyword = json.loads(data)['command']
+        json_obj = json.loads(data)
+        keyword = json_obj['command']
         
         if (keyword == self.dv_update):
             new_dv = Distance_Vector.parse(data)
             self.handle_incoming_dv(new_dv)
+        elif (keyword == self.link_down):
+            self.linkdown_no_send(json_obj['source_ip'], json_obj['source_port'])
+        elif (keyword == self.link_up):
+            self.linkup_no_send(json_obj['source_ip'], json_obj['source_port'])
+        else:
+            print 'Error in data transmission. Peer at ' + peer_ip + ':' \
+                + str(peer_port) + ' using invalid transmission protocol. '
+            stdout.flush()
             
     def handle_incoming_dv(self, new_dv):            
             new_dv_key = new_dv.sender_ip + ':' + str(new_dv.sender_port)
@@ -170,6 +207,8 @@ class Peer:
         
         if self.neighbors[key].send_count >= 3:
             self.neighbors[key].is_active = False
+            # just added
+            self.cmd_linkdown(dest_ip, dest_port)
 
     # Add to neighbor dictionary and add to Distance Vector
     def add_neighbor(self, remote_ip, remote_port, remote_weight):
@@ -183,6 +222,13 @@ class Peer:
         self.neighbors[key].timer.start() # start sending DVs
 
     def __init__(self, argv):
+        if (len(argv) < 6):
+            print 'You entered too few arguments. At the very least, you must',
+            print 'enter a local port number and a timeout (in seconds), as well',
+            print 'as the IP, port, and link weight of at least one peer.' 
+            stdout.flush()
+            exit()
+            
         self.local_IP = Peer.get_external_ip()
         self.local_port = int(argv[1])
         self.name = self.local_IP + ':' + argv[1]
@@ -198,10 +244,6 @@ class Peer:
         for n in range(3, len(argv) - 2, 3):
             self.add_neighbor(argv[n], int(argv[n + 1]), int(argv[n + 2]))
 
-#         # start sending distance vectors to neighbors
-#         for key in self.neighbors:
-#             self.neighbors[key].timer.start()
-        
         # set up read-only UDP socket to listen for incoming messages
         sock = socket(AF_INET, SOCK_DGRAM)
         sock.bind((self.local_IP, self.local_port))
