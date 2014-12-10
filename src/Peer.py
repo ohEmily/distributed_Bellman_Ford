@@ -17,7 +17,7 @@ from socket import socket, AF_INET, SOCK_DGRAM
 from sys import argv, stdout, exit
 from threading import Thread
 from __builtin__ import raw_input
-from datetime import datetime, timedelta
+from datetime import datetime
 import time
 import json
 
@@ -137,18 +137,18 @@ class Peer:
             new_dv = Distance_Vector.parse(data)
             self.handle_incoming_dv(new_dv)
             
-    def handle_incoming_dv(self, new_dv):
-            #TESTING
-            print new_dv.pretty_print()
-            stdout.flush()
+    def handle_incoming_dv(self, new_dv):            
+            new_dv_key = new_dv.sender_ip + ':' + str(new_dv.sender_port)
             
             # if not already a neighbor, make him one
-            if (not self.neighbors.has_key(new_dv.name)):
+            if (not self.neighbors.has_key(new_dv_key)):                
                 self.add_neighbor(new_dv.sender_ip, new_dv.sender_port, 
                                   new_dv.get_weight(self.name))
                 
+            self.distance_vector.compare_DVs(new_dv)
+                
             # reset number of consecutive sends without hearing from this peer    
-            this_neighbor = self.neighbors[new_dv.sender_ip + ':' + str(new_dv.sender_port)]
+            this_neighbor = self.neighbors[new_dv_key]
             this_neighbor.send_count = 0
             this_neighbor.last_active_time = 0 # TODO not 0
     
@@ -156,7 +156,6 @@ class Peer:
     def should_send(self, neighbor_obj):
         if (neighbor_obj.is_active and neighbor_obj.send_count < 3):
             return True
-        
         return False
 
     # send single DV
@@ -164,9 +163,6 @@ class Peer:
         key = Peer.create_key(dest_ip, dest_port)
         
         if (self.should_send(self.neighbors[key])):
-            # TESTING
-            #print 'sending DV to ' + dest_ip + ':' + str(dest_port)
-            #stdout.flush()
             self.distance_vector.send_distance_vector(dest_ip, dest_port, command)
         
             self.neighbors[key].send_count += 1
@@ -183,6 +179,8 @@ class Peer:
         self.neighbors[key] = Neighbor(True, 0, 0, neighbor_timer)
         
         self.distance_vector.add_or_update_cost(key, remote_weight, True)
+        
+        self.neighbors[key].timer.start() # start sending DVs
 
     def __init__(self, argv):
         self.local_IP = Peer.get_external_ip()
@@ -191,35 +189,31 @@ class Peer:
         self.timeout_seconds = int(argv[2])
         self.neighbors = {}
         self.distance_vector = Distance_Vector(self.local_IP, self.local_port)
-        
-        # register neighbors passed in as arguments: initialization step of algorithm
-        for n in range(3, len(argv) - 2, 3):
-            self.add_neighbor(argv[n], int(argv[n + 1]), int(argv[n + 2]))
-        
+                
         # open command line interface
         interface_thread = Thread(target=self.open_interface, args=())
         interface_thread.start()
         
-        # start sending updated distance vectors to neighbors
-        for key in self.neighbors:
-            self.neighbors[key].timer.start()
+        # register neighbors passed in as arguments: initialization step of algorithm
+        for n in range(3, len(argv) - 2, 3):
+            self.add_neighbor(argv[n], int(argv[n + 1]), int(argv[n + 2]))
+
+#         # start sending distance vectors to neighbors
+#         for key in self.neighbors:
+#             self.neighbors[key].timer.start()
         
         # set up read-only UDP socket to listen for incoming messages
         sock = socket(AF_INET, SOCK_DGRAM)
         sock.bind((self.local_IP, self.local_port))
         # continuously receive data from neighbors, updating distance vector 
         # and neighbor list accordingly
-        try:
-            while 1:
-                data, addr = sock.recvfrom(self.BUFF_SIZE) 
-    
-                client_thread = Thread(target=self.handle_incoming_data, 
-                                args=(data, addr[0], addr[1]))
-                client_thread.start()
-        except Exception as e:
-            print e
-            stdout.flush()
-        
+        while 1:
+            data, addr = sock.recvfrom(self.BUFF_SIZE) 
+
+            client_thread = Thread(target=self.handle_incoming_data, 
+                            args=(data, addr[0], addr[1]))
+            client_thread.start()
+            
 def main(argv):
     Peer(argv)
     
