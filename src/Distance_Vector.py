@@ -21,6 +21,7 @@ class Distance_Vector:
     def __init__(self, sender_ip, sender_port):
         self.sender_ip = sender_ip
         self.sender_port = sender_port
+        self.name = sender_ip + ':' + str(sender_port)
         self.destinations = {}
         self.is_neighbor = {}
     
@@ -31,9 +32,6 @@ class Distance_Vector:
         if not self.destinations.has_key(key):
             self.destinations[key] = weight
             self.is_neighbor[key] = is_neighbor_bool
-        
-        
-        
         
     def send_distance_vector(self, dest_ip, dest_port, command):
         sock = socket(AF_INET, SOCK_DGRAM)
@@ -55,18 +53,22 @@ class Distance_Vector:
                 
     # sends estimated distance of this node to all known destinations in JSON.
     def serialize(self, command):
-        return command + ' \n' + json.dumps(self.destinations)
+        return json.dumps({'command' : command, \
+                           'origin_ip' : self.sender_ip, \
+                           'origin_port' : self.sender_port, \
+                          'destinations' : self.destinations})
     
     @classmethod
-    def parse(self, dv_string, source_ip, source_port):
-        # initialize a new DV
-        new_DV = Distance_Vector(source_ip, source_port)
+    def parse(self, dv_string):
+        deserialized = json.loads(dv_string)
         
-        # skip the first line because that contains the command
-        values_json = dv_string.split('\n', 1)[1]
-
-        new_DV.destinations = json.loads(values_json)
-            
+#         print 'Sender: {ip}:{port}'.format(ip=deserialized['origin_ip'], port=deserialized['origin_port'])
+#         stdout.flush()
+        
+        # initialize a new DV
+        new_DV = Distance_Vector(deserialized['origin_ip'], deserialized['origin_port'])
+        new_DV.destinations = deserialized['destinations']
+        
         return new_DV
     
     # output human-readable version of distance vector

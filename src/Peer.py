@@ -19,6 +19,7 @@ from threading import Thread
 from __builtin__ import raw_input
 from datetime import datetime, timedelta
 import time
+import json
 
 from Distance_Vector import Distance_Vector
 from Neighbor import Neighbor
@@ -33,7 +34,6 @@ class SendTimer(Thread):
         
         self.daemon = True 
         # from docs: 'entire Python program exits when only daemon threads are left'
-
     def run(self):
         while True:
             time.sleep(self.timeout)
@@ -93,6 +93,8 @@ class Peer:
                         self.cmd_showrt()
                     elif message[0].upper() == self.close:
                         self.cmd_close()
+                    elif message[0].upper() == self.dv_update:
+                        self.send_DV(message[1], message[2], self.dv_update)
                     else:
                         print 'Command not found. '
             except Exception as e:
@@ -126,41 +128,45 @@ class Peer:
             print '\nPeer process shut down. '
 
     ##################### NETWORK INTERFACE METHODS ######################
-    # waits to hear for a new peer. If we hear from a new peer, try to send_update
+    # waits to hear from a peer. If we hear from a new peer, try to send_update
     # the distance vector.
-    def handle_incoming_data(self, data, peer_ip, peer_port):
-        print 'Received data from ' + str(peer_ip) + ':' + str(peer_port) + ': ' + data[0:100]
-        stdout.flush()
-       
-        keyword = data.split(' ', 1)[0]
+    def handle_incoming_data(self, data, peer_ip, peer_port): 
+        keyword = json.loads(data)['command']
         
         if (keyword == self.dv_update):
-            new_dv = Distance_Vector.parse(data, peer_ip, peer_port)
+            new_dv = Distance_Vector.parse(data)
+            self.handle_incoming_dv(new_dv)
             
+    def handle_incoming_dv(self, new_dv):
+            #TESTING
             print new_dv.pretty_print()
             stdout.flush()
             
-            # reset number of consecutive sends without hearing from this peer
-            this_neighbor = self.neighbors[peer_ip + ':' + str(peer_port)]
+            # if not already a neighbor, make him one
+            if (not self.neighbors.has_key(new_dv.name)):
+                self.add_neighbor(new_dv.sender_ip, new_dv.sender_port, 
+                                  new_dv.get_weight(self.name))
+                
+            # reset number of consecutive sends without hearing from this peer    
+            this_neighbor = self.neighbors[new_dv.sender_ip + ':' + str(new_dv.sender_port)]
             this_neighbor.send_count = 0
             this_neighbor.last_active_time = 0 # TODO not 0
     
     # returns true if we should send a distance vector to this client; false if not
     def should_send(self, neighbor_obj):
         if (neighbor_obj.is_active and neighbor_obj.send_count < 3):
-            # DV has never been sent to this peer before
-            if (neighbor_obj.last_active_time == 0):
-                return True
+            return True
         
         return False
 
     # send single DV
     def send_DV(self, dest_ip, dest_port, command):
-        print 'sent DV'
-        stdout.flush()
         key = Peer.create_key(dest_ip, dest_port)
         
         if (self.should_send(self.neighbors[key])):
+            # TESTING
+            #print 'sending DV to ' + dest_ip + ':' + str(dest_port)
+            #stdout.flush()
             self.distance_vector.send_distance_vector(dest_ip, dest_port, command)
         
             self.neighbors[key].send_count += 1
@@ -181,6 +187,7 @@ class Peer:
     def __init__(self, argv):
         self.local_IP = Peer.get_external_ip()
         self.local_port = int(argv[1])
+        self.name = self.local_IP + ':' + argv[1]
         self.timeout_seconds = int(argv[2])
         self.neighbors = {}
         self.distance_vector = Distance_Vector(self.local_IP, self.local_port)
@@ -193,22 +200,25 @@ class Peer:
         interface_thread = Thread(target=self.open_interface, args=())
         interface_thread.start()
         
-        
         # start sending updated distance vectors to neighbors
         for key in self.neighbors:
             self.neighbors[key].timer.start()
-               
+        
         # set up read-only UDP socket to listen for incoming messages
         sock = socket(AF_INET, SOCK_DGRAM)
         sock.bind((self.local_IP, self.local_port))
         # continuously receive data from neighbors, updating distance vector 
         # and neighbor list accordingly
-        while 1:
-            data, addr = sock.recvfrom(self.BUFF_SIZE) 
-
-            client_thread = Thread(target=self.handle_incoming_data, 
-                            args=(data, addr[0], addr[1]))
-            client_thread.start()
+        try:
+            while 1:
+                data, addr = sock.recvfrom(self.BUFF_SIZE) 
+    
+                client_thread = Thread(target=self.handle_incoming_data, 
+                                args=(data, addr[0], addr[1]))
+                client_thread.start()
+        except Exception as e:
+            print e
+            stdout.flush()
         
 def main(argv):
     Peer(argv)

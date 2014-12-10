@@ -6,7 +6,8 @@ network topography changes.
 
 Extra Features
 --------------
- - force update command
+ - added command: force sending DV to peer (type 'update <ip_addr> <port>')
+	
 
 How to run (example)
 ----------
