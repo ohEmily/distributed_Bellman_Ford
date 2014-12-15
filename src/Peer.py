@@ -125,8 +125,11 @@ class Peer:
             neighbor_obj = self.neighbors[key]
             self.distance_vector.deactivate_link(key)
             neighbor_obj.is_active = False
-            
+        
         else:
+            changed_next_hops = []
+            changed_next_hops.append(Peer.create_key(dest_ip, dest_port))
+            self.distance_vector.check_next_hops(changed_next_hops)
             print 'This node is not a neighbor. '
             stdout.flush()
     
@@ -183,14 +186,9 @@ class Peer:
             
     def handle_incoming_dv(self, new_dv):            
             new_dv_key = new_dv.sender_ip + ':' + str(new_dv.sender_port)
-            
-            print 'Received a DV'
-            stdout.flush()
-            
+
             # if not already a neighbor, make him one
             if (not self.neighbors.has_key(new_dv_key)):
-                print 'Adding incoming dv to neighbor list'
-                stdout.flush()  
                 self.add_neighbor(new_dv.sender_ip, new_dv.sender_port, 
                                   new_dv.get_weight(self.name))
             
@@ -202,11 +200,12 @@ class Peer:
             this_neighbor.send_count = 0
             this_neighbor.last_active_time = 0 # TODO not 0
             
+            # if something changed in the V, immediately update all neighbors
             if changed_DV:
-                self.send_updated()
+                self.send_update_to_neighbors()
     
     # send updated DV to all direct neighbors
-    def send_updated(self):
+    def send_update_to_neighbors(self):
         for neighbor_name in self.neighbors:
             (dest_ip, dest_port) = Peer.parse_key(neighbor_name)
             self.send_DV(dest_ip, dest_port, self.dv_update)
@@ -223,10 +222,7 @@ class Peer:
         
         if (self.should_send(self.neighbors[key])):
             self.distance_vector.send_distance_vector(dest_ip, dest_port, command)
-        
-            print 'sent DV to ' + str(dest_ip) + ':' + str(dest_port)
-            stdout.flush()
-        
+
             self.neighbors[key].send_count += 1
             self.neighbors[key].last_active_time = datetime.now()
         

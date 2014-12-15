@@ -48,6 +48,7 @@ class Distance_Vector:
     # distance vector.
     def compare_DVs(self, other_DV):
         updated_DV = False
+        changed_next_hops = []
         
         for other_peer_key in other_DV.destination_weights:
             if other_peer_key != self.address:
@@ -63,14 +64,25 @@ class Distance_Vector:
                     if thru_weight < self.destination_weights[other_peer_key]:
                         self.add_or_update_cost(other_peer_key, thru_weight, other_DV.address)
                         updated_DV = True
+                        changed_next_hops.append(other_DV.address)
                         
             else: # if other_peer's neighbor == this peer
                 if other_DV.destination_weights[self.address] < self.destination_weights[other_DV.address]:
                     self.destination_weights[other_DV.address] = other_DV.destination_weights[self.address]
                     updated_DV = True
-            
+                    changed_next_hops.append(other_DV.address)
+        
+        if updated_DV:
+            self.check_next_hops(changed_next_hops)
+        
         return updated_DV
 
+    def check_next_hops(self, changed_next_hops):
+        print 'updated DV. hops changed: ' + str(changed_next_hops)
+        for each_hop in changed_next_hops:
+            for each_destination in self.destination_weights.keys():
+                if self.next_hops[each_destination] == each_hop:
+                    self.destination_weights[each_destination] = float('inf')
 
     ################### DATA TRANSFER METHODS ################################       
     # sends estimated distance of this node to all known destination_weights in JSON.
