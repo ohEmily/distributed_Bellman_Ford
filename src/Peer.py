@@ -47,6 +47,7 @@ class Peer:
     link_down =     'LINKDOWN' 
     link_up =       'LINKUP'
     show_routes =   'SHOWRT'
+    show_next_hops = 'SHOWNXT'
     close =         'CLOSE'
     dv_update =     'UPDATE'
 
@@ -91,6 +92,8 @@ class Peer:
                             print 'Missing arguments. '
                     elif message[0].upper() == self.show_routes:
                         self.cmd_showrt()
+                    elif message[0].upper() == self.show_next_hops:
+                        self.cmd_show_next_hop()
                     elif message[0].upper() == self.close:
                         self.cmd_close()
                     elif message[0].upper() == self.dv_update:
@@ -148,6 +151,10 @@ class Peer:
         print self.distance_vector.pretty_print()
         stdout.flush()
         
+    def cmd_show_next_hop(self):
+        print self.distance_vector.pretty_print_next_hops()
+        stdout.flush()
+        
     # close this process
     def cmd_close(self):
         print '\nPeer process shut down. '
@@ -181,17 +188,28 @@ class Peer:
             stdout.flush()
             
             # if not already a neighbor, make him one
-            if (not self.neighbors.has_key(new_dv_key)):           
+            if (not self.neighbors.has_key(new_dv_key)):
+                print 'Adding incoming dv to neighbor list'
+                stdout.flush()  
                 self.add_neighbor(new_dv.sender_ip, new_dv.sender_port, 
                                   new_dv.get_weight(self.name))
             
-            self.distance_vector.compare_DVs(new_dv)
-                
+            changed_DV = self.distance_vector.compare_DVs(new_dv)
+            
             # reset number of consecutive sends without hearing from this peer    
             this_neighbor = self.neighbors[new_dv_key]
             this_neighbor.is_active = True
             this_neighbor.send_count = 0
             this_neighbor.last_active_time = 0 # TODO not 0
+            
+            if changed_DV:
+                self.send_updated()
+    
+    # send updated DV to all direct neighbors
+    def send_updated(self):
+        for neighbor_name in self.neighbors:
+            (dest_ip, dest_port) = Peer.parse_key(neighbor_name)
+            self.send_DV(dest_ip, dest_port, self.dv_update)
     
     # returns true if we should send a distance vector to this client; false if not
     def should_send(self, neighbor_obj):
@@ -223,7 +241,7 @@ class Peer:
                                    remote_ip, remote_port, self.dv_update)
         self.neighbors[key] = Neighbor(True, 0, 0, neighbor_timer)
         
-        self.distance_vector.add_or_update_cost(key, remote_weight)
+        self.distance_vector.add_or_update_cost(key, remote_weight, key)
         
         self.neighbors[key].timer.start() # start sending DVs
 

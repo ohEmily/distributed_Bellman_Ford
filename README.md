@@ -4,15 +4,15 @@ An implementation of a distributed routing algorithm based on the Bellman Ford
 equation. Uses distance vectors to dynamically recalculate shortest paths as 
 network topography changes.
 
-Note: to show the value for infinity in this assignment, I used 'maxint', which in Python is 2147483647.
-
 Extra Features
 --------------
- - added command: force sending DV to peer (type 'update <ip_addr> <port>')
+ - added command: view next hop data (type 'shownxt')
 
 Description of Inter-Peer Communication Protocol
 ------------------------------------------------
 Peers communicate using an object serialized to JSON. The object always has a 'command' attribute which tells the receiving peer what sort of payload it is receiving. From there, depending on what kind of message it received (SHOWRT, LINKUP, or LINKDOWN), it reads different parts of the JSON object pertinent to that command.
+
+If the distance vector is being sent, it sends both the weights and the next hops.
  
 How to run (example)
 ----------
