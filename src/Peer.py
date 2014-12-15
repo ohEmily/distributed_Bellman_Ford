@@ -31,9 +31,9 @@ class SendTimer(Thread):
         self.func = func
         self.timeout = timeout
         self.args = args
-        
         self.daemon = True 
         # from docs: 'entire Python program exits when only daemon threads are left'
+        
     def run(self):
         while True:
             time.sleep(self.timeout)
@@ -177,15 +177,19 @@ class Peer:
     def handle_incoming_dv(self, new_dv):            
             new_dv_key = new_dv.sender_ip + ':' + str(new_dv.sender_port)
             
+            print 'Received a DV'
+            stdout.flush()
+            
             # if not already a neighbor, make him one
-            if (not self.neighbors.has_key(new_dv_key)):                
+            if (not self.neighbors.has_key(new_dv_key)):           
                 self.add_neighbor(new_dv.sender_ip, new_dv.sender_port, 
                                   new_dv.get_weight(self.name))
-                
+            
             self.distance_vector.compare_DVs(new_dv)
                 
             # reset number of consecutive sends without hearing from this peer    
             this_neighbor = self.neighbors[new_dv_key]
+            this_neighbor.is_active = True
             this_neighbor.send_count = 0
             this_neighbor.last_active_time = 0 # TODO not 0
     
@@ -202,6 +206,9 @@ class Peer:
         if (self.should_send(self.neighbors[key])):
             self.distance_vector.send_distance_vector(dest_ip, dest_port, command)
         
+            print 'sent DV to ' + str(dest_ip) + ':' + str(dest_port)
+            stdout.flush()
+        
             self.neighbors[key].send_count += 1
             self.neighbors[key].last_active_time = datetime.now()
         
@@ -216,7 +223,7 @@ class Peer:
                                    remote_ip, remote_port, self.dv_update)
         self.neighbors[key] = Neighbor(True, 0, 0, neighbor_timer)
         
-        self.distance_vector.add_or_update_cost(key, remote_weight, True)
+        self.distance_vector.add_or_update_cost(key, remote_weight)
         
         self.neighbors[key].timer.start() # start sending DVs
 
